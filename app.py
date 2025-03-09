@@ -76,7 +76,7 @@ async def send_request(encrypted_uid, token, url):
         app.logger.error(f"Exception in send_request: {e}")
         return None
 
-async def send_multiple_requests(uid, server_name, url, total_requests=100):
+async def send_multiple_requests(uid, server_name, url, total_requests=None):
     try:
         region = server_name
         protobuf_message = create_protobuf_message(uid, region)
@@ -88,6 +88,10 @@ async def send_multiple_requests(uid, server_name, url, total_requests=100):
         tokens = load_tokens(server_name)
         if tokens is None:
             return None
+
+        # If total_requests is not provided, use the number of tokens
+        if total_requests is None:
+            total_requests = len(tokens)
 
         # Distribute requests evenly across all tokens
         tasks = []
@@ -186,7 +190,7 @@ def handle_requests():
             url = url_map.get(server_name, "https://clientbp.ggblueshark.com/LikeProfile")
 
             # Send multiple requests using all tokens
-            asyncio.run(send_multiple_requests(uid, server_name, url, total_requests=len(tokens)))
+            asyncio.run(send_multiple_requests(uid, server_name, url))
 
             after = make_request(encrypted_uid, server_name, token)
             if after is None:
