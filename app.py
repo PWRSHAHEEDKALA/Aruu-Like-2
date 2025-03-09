@@ -14,21 +14,6 @@ from google.protobuf.message import DecodeError
 
 app = Flask(__name__)
 
-# Semaphore to limit concurrent requests
-SEMAPHORE_LIMIT = 10  # Adjust based on server tolerance
-semaphore = asyncio.Semaphore(SEMAPHORE_LIMIT)
-
-# Retry settings
-MAX_RETRIES = 3  # Maximum number of retries for failed requests
-RETRY_DELAY = 2  # Delay (in seconds) between retries
-
-# Proxy settings (if needed)
-PROXIES = [
-    "http://proxy1.example.com:8080",
-    "http://proxy2.example.com:8080",
-    # Add more proxies here
-]
-
 def load_tokens(server_name):
     try:
         if server_name == "IND":
@@ -67,38 +52,29 @@ def create_protobuf_message(user_id, region):
         app.logger.error(f"Error creating protobuf message: {e}")
         return None
 
-async def send_request(encrypted_uid, token, url, proxy=None):
-    retries = 0
-    while retries < MAX_RETRIES:
-        try:
-            async with semaphore:  # Limit concurrent requests
-                edata = bytes.fromhex(encrypted_uid)
-                headers = {
-                    'User-Agent': "Dalvik/2.1.0 (Linux; U; Android 10; ASUS_Z01QD Build/Release)",
-                    'Connection': "Keep-Alive",
-                    'Accept-Encoding': "gzip",
-                    'Authorization': f"Bearer {token}",
-                    'Content-Type': "application/x-www-form-urlencoded",
-                    'Expect': "100-continue",
-                    'X-Unity-Version': "2019.4.11f1",
-                    'X-GA': "v1 1",
-                    'ReleaseVersion': "OB48"
-                }
-                async with aiohttp.ClientSession() as session:
-                    async with session.post(url, data=edata, headers=headers, proxy=proxy) as response:
-                        if response.status != 200:
-                            app.logger.error(f"Request failed with status code: {response.status}")
-                            retries += 1
-                            await asyncio.sleep(RETRY_DELAY)
-                            continue
-                        response_text = await response.text()
-                        app.logger.info(f"Request successful for token: {token[:10]}...")
-                        return response_text
-        except Exception as e:
-            app.logger.error(f"Exception in send_request: {e}")
-            retries += 1
-            await asyncio.sleep(RETRY_DELAY)
-    return None
+async def send_request(encrypted_uid, token, url):
+    try:
+        edata = bytes.fromhex(encrypted_uid)
+        headers = {
+            'User-Agent': "Dalvik/2.1.0 (Linux; U; Android 10; ASUS_Z01QD Build/Release)",
+            'Connection': "Keep-Alive",
+            'Accept-Encoding': "gzip",
+            'Authorization': f"Bearer {token}",
+            'Content-Type': "application/x-www-form-urlencoded",
+            'Expect': "100-continue",
+            'X-Unity-Version': "2019.4.11f1",
+            'X-GA': "v1 1",
+            'ReleaseVersion': "OB48"
+        }
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, data=edata, headers=headers) as response:
+                if response.status != 200:
+                    app.logger.error(f"Request failed with status code: {response.status}")
+                    return response.status
+                return await response.text()
+    except Exception as e:
+        app.logger.error(f"Exception in send_request: {e}")
+        return None
 
 async def send_multiple_requests(uid, server_name, url, total_requests=None):
     try:
@@ -121,10 +97,8 @@ async def send_multiple_requests(uid, server_name, url, total_requests=None):
         tasks = []
         for i in range(total_requests):
             token = tokens[i % len(tokens)]["token"]  # Cycle through tokens
-            proxy = PROXIES[i % len(PROXIES)] if PROXIES else None  # Use proxies if available
-            tasks.append(send_request(encrypted_uid, token, url, proxy))
-            await asyncio.sleep(0.1)  # Add a small delay between requests
-
+            tasks.append(send_request(encrypted_uid, token, url))
+        
         results = await asyncio.gather(*tasks, return_exceptions=True)
         return results
     except Exception as e:
