@@ -14,6 +14,10 @@ from google.protobuf.message import DecodeError
 
 app = Flask(__name__)
 
+# Semaphore to limit concurrent requests
+SEMAPHORE_LIMIT = 10  # Adjust based on server tolerance
+semaphore = asyncio.Semaphore(SEMAPHORE_LIMIT)
+
 def load_tokens(server_name):
     try:
         if server_name == "IND":
@@ -54,24 +58,27 @@ def create_protobuf_message(user_id, region):
 
 async def send_request(encrypted_uid, token, url):
     try:
-        edata = bytes.fromhex(encrypted_uid)
-        headers = {
-            'User-Agent': "Dalvik/2.1.0 (Linux; U; Android 10; ASUS_Z01QD Build/Release)",
-            'Connection': "Keep-Alive",
-            'Accept-Encoding': "gzip",
-            'Authorization': f"Bearer {token}",
-            'Content-Type': "application/x-www-form-urlencoded",
-            'Expect': "100-continue",
-            'X-Unity-Version': "2019.4.11f1",
-            'X-GA': "v1 1",
-            'ReleaseVersion': "OB48"
-        }
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, data=edata, headers=headers) as response:
-                if response.status != 200:
-                    app.logger.error(f"Request failed with status code: {response.status}")
-                    return response.status
-                return await response.text()
+        async with semaphore:  # Limit concurrent requests
+            edata = bytes.fromhex(encrypted_uid)
+            headers = {
+                'User-Agent': "Dalvik/2.1.0 (Linux; U; Android 10; ASUS_Z01QD Build/Release)",
+                'Connection': "Keep-Alive",
+                'Accept-Encoding': "gzip",
+                'Authorization': f"Bearer {token}",
+                'Content-Type': "application/x-www-form-urlencoded",
+                'Expect': "100-continue",
+                'X-Unity-Version': "2019.4.11f1",
+                'X-GA': "v1 1",
+                'ReleaseVersion': "OB48"
+            }
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, data=edata, headers=headers) as response:
+                    if response.status != 200:
+                        app.logger.error(f"Request failed with status code: {response.status}")
+                        return None
+                    response_text = await response.text()
+                    app.logger.info(f"Request successful for token: {token[:10]}...")
+                    return response_text
     except Exception as e:
         app.logger.error(f"Exception in send_request: {e}")
         return None
@@ -98,7 +105,8 @@ async def send_multiple_requests(uid, server_name, url, total_requests=None):
         for i in range(total_requests):
             token = tokens[i % len(tokens)]["token"]  # Cycle through tokens
             tasks.append(send_request(encrypted_uid, token, url))
-        
+            await asyncio.sleep(0.1)  # Add a small delay between requests
+
         results = await asyncio.gather(*tasks, return_exceptions=True)
         return results
     except Exception as e:
