@@ -14,7 +14,7 @@ from google.protobuf.message import DecodeError
 app = Flask(__name__)
 
 # === GitHub configuration for private repo access ===
-GITHUB_TOKEN = "Your_Github_Token"
+GITHUB_TOKEN = "GITHUB_TOKEN"
 REPO_OWNER = "PWRSHAHEEDKALA"
 REPO_NAME = "Aruu-like-2"
 
