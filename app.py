@@ -18,10 +18,10 @@ def load_tokens(server_name):
     try:
         if server_name == "IND":
             file_path = "token_ind.json"
-        elif server_name in {"BR", "US", "SAC", "NA"}:
-            file_path = "token_br.json"
-        else:
+        elif server_name in {"BR", "US", "SAC", "NA", "ME", "EU"}:
             file_path = "token_bd.json"
+        else:
+            file_path = "token_br.json"
 
         with open(file_path, "r") as f:
             return json.load(f)
